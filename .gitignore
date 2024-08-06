@@ -1,3 +1,24 @@
+*.fig
+figs/
+*.json
+*.pdf
+*tmp*
+*.txt
+out/
+*vscode*
+*.csv
+hpc-runs/
+states/
+runs/
+*.npy
+*.npz
+*.ipynb
+*.mpack
+*.log
+*.DS_Store
+*.pkl
+*.pickle
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
