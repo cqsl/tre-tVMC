@@ -8,16 +8,9 @@ from netket.optimizer import (
     identity_preconditioner,
     PreconditionerT,
 )
-import jax
-import jax.numpy as jnp
-import json
-import flax
-from netket.driver.abstract_variational_driver import apply_gradient
 import copy
 from typing import Any
 from dataclasses import dataclass
-import copy
-import warnings
 
 from tre_tvmc.driver.utils import (
     driver_info,
@@ -25,18 +18,19 @@ from tre_tvmc.driver.utils import (
     print_mpi,
     copy_variational_state,
 )
-from tre_tvmc.driver.utils import copy_variational_state
 from .logic import InfidelityOperator
+
 
 @dataclass
 class CheckPoint:
-    """ This class will be used to store properties during the optimization.
+    """This class will be used to store properties during the optimization.
     We will use it to backtrack when a given update was a bad one.
     """
+
     loss_stats: Stats
     variables: Any
-    optimizer_state: Any  
-    
+    optimizer_state: Any
+
     def __init__(self, loss_stats, vstate, optimizer_state):
         # make deepcopies to be certain
         # this should be VERY cheap to do, since it's the inner loop, so verify this
@@ -46,7 +40,7 @@ class CheckPoint:
         self.loss_stats = loss_stats
         self.variables = copy.deepcopy(vstate.variables)
         self.optimizer_state = copy.deepcopy(optimizer_state)
-        
+
     def reset_state(self, state, n_hot=1):
         # we might want to resample to avoid using the same bad samples from before
         state.variables = self.variables
@@ -55,6 +49,7 @@ class CheckPoint:
                 state.reset()
                 state.samples
         return state
+
 
 class InfidelityOptimizer(AbstractVariationalDriver):
     def __init__(
@@ -153,13 +148,12 @@ class InfidelityOptimizer(AbstractVariationalDriver):
                 included with NetKet is Stochastic Reconfiguration. By default, no
                 preconditioner is used and the bare gradient is passed to the optimizer.
         """
-        
+
         # do some changes first
         if sample_sqrt:
             variational_state = make_psi_state(variational_state)
             target_state = make_psi_state(target_state)
-        
-        
+
         super().__init__(
             variational_state, optimizer, minimized_quantity_name="Infidelity"
         )
@@ -170,7 +164,7 @@ class InfidelityOptimizer(AbstractVariationalDriver):
         self.n_redo = n_redo
         # will contain the info of last good step to check in next step
         # should ideally also store the samples (!)
-        self._checkpoint = None 
+        self._checkpoint = None
         self._preconditioner = preconditioner
         self._sample_sqrt = sample_sqrt
 
@@ -181,29 +175,28 @@ class InfidelityOptimizer(AbstractVariationalDriver):
             is_unitary=is_unitary,
             cv_coeff=cv_coeff,
             sample_Upsi=sample_Upsi,
-            sample_sqrt = sample_sqrt,
+            sample_sqrt=sample_sqrt,
         )
-        
+
         # we HAVE to let them adjust a bit before we start
         for _ in range(8):
             self._op.target.reset()
             self._op.target.samples
             self.state.reset()
             self.state.samples
-            
 
     def _forward_and_backward(self):
-        """ this now also performs a check to see if we update or not (!). """     
+        """this now also performs a check to see if we update or not (!)."""
         self.state.reset()
         if self.resample_Upsi:
             self._op.target.reset()
-            
+
         self._loss_stats, self._loss_grad = self.state.expect_and_grad(self._op)
-        
+
         self._dp = self.preconditioner(self.state, self._loss_grad, self.step_count)
-        
+
         return self._dp
-    
+
     def iter(self, n_steps: int, step: int = 1):
         """
         Returns a generator which advances the VMC optimization, yielding
@@ -224,11 +217,13 @@ class InfidelityOptimizer(AbstractVariationalDriver):
             for i in range(0, step):
                 dp = self._forward_and_backward()
                 new_stats = self._loss_stats
-                
+
                 if self._checkpoint is None:
                     # initialize first time
-                    self._checkpoint = CheckPoint(self._loss_stats, self.state, self._optimizer_state)
-                
+                    self._checkpoint = CheckPoint(
+                        self._loss_stats, self.state, self._optimizer_state
+                    )
+
                 # perform some checks to see whether we need to backtrack (!!!)
                 # cast into some useful variable names
                 prev_stats = self._checkpoint.loss_stats
@@ -236,32 +231,44 @@ class InfidelityOptimizer(AbstractVariationalDriver):
                 # add additional flexibility due to bad error estimate now
                 # this only works for INFIDELITY CENTERED AROUND 0 (!!!)
                 # if self._step_count > 0 and \
-                if n_seq_failed <= max_seq_failed and \
-                        new_stats.mean > prev_stats.mean + self.n_sigma_check*np.abs(prev_stats.mean) + self.n_sigma_check*prev_stats.error_of_mean:
-                    print_mpi(f"Update did not meet the requirements (step={self.step_count}):", new_stats, "while previous = ", prev_stats, flush=True)
+                if (
+                    n_seq_failed <= max_seq_failed
+                    and new_stats.mean
+                    > prev_stats.mean
+                    + self.n_sigma_check * np.abs(prev_stats.mean)
+                    + self.n_sigma_check * prev_stats.error_of_mean
+                ):
+                    print_mpi(
+                        f"Update did not meet the requirements (step={self.step_count}):",
+                        new_stats,
+                        "while previous = ",
+                        prev_stats,
+                        flush=True,
+                    )
                     backtrack = True
                     n_seq_failed += 1
                 else:
                     n_seq_failed = 0
-                    
-                if i == 0: # only at first step they compute things
+
+                if i == 0:  # only at first step they compute things
                     yield self.step_count
                 self._step_count += 1
-                
+
                 if backtrack:
                     print_mpi("BACKTRACK!", flush=True)
                     self._backtrack_parameters()
                 else:
                     # this value becomes the new reference
-                    self._checkpoint = CheckPoint(self._loss_stats, self.state, self._optimizer_state)
+                    self._checkpoint = CheckPoint(
+                        self._loss_stats, self.state, self._optimizer_state
+                    )
                     self.update_parameters(dp)
 
     def _backtrack_parameters(self):
         # reset the state to what made sense before
         print_mpi("Backtracking the parameters", flush=True)
         self._checkpoint.reset_state(self.state, n_hot=1)
-        self._optimizer_state = self._checkpoint.optimizer_state       
-        
+        self._optimizer_state = self._checkpoint.optimizer_state
 
     def run(
         self,
@@ -314,7 +321,7 @@ class InfidelityOptimizer(AbstractVariationalDriver):
         current state of the driver.
         """
         return self._loss_stats
-    
+
     @property
     def loss(self) -> Stats:
         return self.infidelity
@@ -351,7 +358,7 @@ class InfidelityOptimizer(AbstractVariationalDriver):
 
     def __repr__(self):
         return (
-            "InfidelityOptimiser("
+            "InfidelityOptimizer("
             + f"\n  step_count = {self.step_count},"
             + f"\n  state = {self.state},"
             + f"\n  sample_sqrt = {self._sample_sqrt})"
@@ -370,25 +377,12 @@ class InfidelityOptimizer(AbstractVariationalDriver):
         return "\n{}".format(" " * 3 * (depth + 1)).join([str(self)] + lines)
 
 
-def dryrun_update_parameters(p, dp, optimizer, optimizer_state):
-    """
-    Updates the parameters of the machine using the optimizer in this driver
-
-    Args:
-        dp: the pytree containing the updates to the parameters
-    """
-    new_state, new_params = apply_gradient(
-        optimizer.update, optimizer_state, dp, p
-    )
-    return new_state, new_params
-
-
 def make_psi_state(vs, n_hot=5):
     new_vs = copy_variational_state(vs, n_hot=0, copy_samples=True)
     # following is a bit hacky, but otherwise the samples are completely reinitialized.
     new_vs._sampler = new_vs.sampler.replace(
-        machine_pow=1,    
-    ) # simpler change
+        machine_pow=1,
+    )  # simpler change
     for _ in range(n_hot):
         new_vs.reset()
         new_vs.samples
