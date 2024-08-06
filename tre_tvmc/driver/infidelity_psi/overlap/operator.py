@@ -4,13 +4,12 @@ import jax.numpy as jnp
 from netket.operator import AbstractOperator, ContinuousOperator
 from netket.utils.types import DType
 from netket.utils.numbers import is_scalar
-from netket.vqs import VariationalState, FullSumState, MCState
-import warnings
+from netket.vqs import VariationalState, FullSumState
 from netket.stats import Stats
-import numpy as np
 
 from tre_tvmc.driver.infidelity.utils.sampling_Ustate import make_logpsi_U_afun
 from tre_tvmc.driver.utils import copy_variational_state
+
 
 class InfidelityOperatorUPsi(AbstractOperator):
     def __init__(
@@ -37,7 +36,6 @@ class InfidelityOperatorUPsi(AbstractOperator):
             if isinstance(state, FullSumState):
                 cv_coeff = None
 
-
         self._target = state
         self._cv_coeff = cv_coeff
         self._dtype = dtype
@@ -46,7 +44,7 @@ class InfidelityOperatorUPsi(AbstractOperator):
         self._U_dagger = U_dagger
         self._wc = None
         self._sample_sqrt = sample_sqrt
-                
+
     @property
     def target(self):
         return self._target
@@ -82,9 +80,14 @@ def InfidelityUPsi(
         )
     # print("ABSORBING U INTO PHI")
     logpsiU, variables_U = make_logpsi_U_afun(state._apply_fun, U, state.variables)
-    target = copy_variational_state(state, copy_samples=True, n_hot=1, variables=variables_U, apply_fun=logpsiU)
+    target = copy_variational_state(
+        state, copy_samples=True, n_hot=1, variables=variables_U, apply_fun=logpsiU
+    )
 
-    return InfidelityOperatorUPsi(target, U=None, U_dagger=None, cv_coeff=cv_coeff, dtype=dtype, **kwargs)
+    return InfidelityOperatorUPsi(
+        target, U=None, U_dagger=None, cv_coeff=cv_coeff, dtype=dtype, **kwargs
+    )
+
 
 def average_error_of_mean(R_list):
     means = jnp.array([R.mean for R in R_list])

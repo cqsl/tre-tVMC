@@ -1,46 +1,47 @@
 import netket as nk
 import numpy as np
 import jax.numpy as jnp
-import numpy as np
 import jax
 from functools import partial
-import functools
-from typing import Sequence, Optional
-import netket.jax as nkjax 
+import netket.jax as nkjax
 from netket.utils import mpi
 import tqdm
 import matplotlib.pyplot as plt
-from flax.traverse_util import flatten_dict
 import json
-import os, sys
-import time
+import os
 
 
 # def device_count():
 #     return sharding.device_count()
 
+
 def device_count():
     return mpi.n_nodes
 
+
 def jax_has_gpu():
     try:
-        _ = jax.device_put(jax.numpy.ones(1), device=jax.devices('gpu')[0])
+        _ = jax.device_put(jax.numpy.ones(1), device=jax.devices("gpu")[0])
         return True
-    except:
+    except Exception:
         return False
+
 
 def print_mpi(*args, **kwargs):
     if mpi.node_number == 0:
         print(*args, **kwargs)
+
 
 def tqdm_mpi(x):
     if mpi.node_number == 0:
         return tqdm.tqdm(x)
     else:
         return x
-    
+
+
 def copy_frozen_dict(frozen_dict):
     return type(frozen_dict)({**frozen_dict})
+
 
 def copy_variational_state(vs, n_hot=0, copy_samples=True, **kwargs):
     # warning: does not use the initial sampler state values
@@ -68,7 +69,7 @@ def copy_variational_state(vs, n_hot=0, copy_samples=True, **kwargs):
         )
         if variables is None:
             copy_vs.variables = copy_frozen_dict(vs.variables)
-        vs.samples # initialize it already
+        vs.samples  # initialize it already
         if copy_samples and hasattr(vs.sampler_state, "σ"):
             copy_vs.sampler_state = copy_vs.sampler_state.replace(σ=vs.sampler_state.σ)
         for _ in range(n_hot):
@@ -77,7 +78,7 @@ def copy_variational_state(vs, n_hot=0, copy_samples=True, **kwargs):
         return copy_vs
     elif isinstance(vs, nk.vqs.FullSumState) or hasattr(vs, "_all_states"):
         copy_vs = nk.vqs.FullSumState(
-            vs.hilbert, 
+            vs.hilbert,
             apply_fun=apply,
             init_fun=init,
             variables=variables,
@@ -88,14 +89,19 @@ def copy_variational_state(vs, n_hot=0, copy_samples=True, **kwargs):
         return copy_vs
     else:
         raise NotImplementedError(f"cannot copy this kind of state {type(vs)}")
-    
+
 
 def calc_full_chunk_size(vstate):
     n_devices = device_count()
     if vstate.n_samples % n_devices != 0:
-        raise ValueError("Cannot compute n_samples = {} on n_devices = {}".format(vstate.n_samples, n_devices))
+        raise ValueError(
+            "Cannot compute n_samples = {} on n_devices = {}".format(
+                vstate.n_samples, n_devices
+            )
+        )
     chunk_size = vstate.n_samples // n_devices
     return chunk_size
+
 
 def possibly_undo_chunk_size(vstate, chunk_size):
     if chunk_size == vstate.n_samples // device_count():
@@ -103,8 +109,10 @@ def possibly_undo_chunk_size(vstate, chunk_size):
     else:
         return chunk_size
 
+
 def sparsify(U):
     return U.to_sparse()
+
 
 def make_Ustate(vs, op=None, normalize=False):
     vec = vs.to_array(normalize=normalize)
@@ -117,8 +125,10 @@ def make_Ustate(vs, op=None, normalize=False):
             Ustate /= np.linalg.norm(Ustate)
         return Ustate
 
+
 def default_inner_callback(*args):
     return True
+
 
 class LargeHilbertPlotter:
     def __init__(self, n_samples=None, resample=True):
@@ -126,21 +136,21 @@ class LargeHilbertPlotter:
         self._samples = None
         self._vs = None
         self.resample = resample
-        
+
     def reset(self, vs=None):
         self._samples = None
         self._vs = vs
-        
+
     @property
     def samples(self):
         if self._samples is None:
             x = self._vs.samples
             x = x.reshape(-1, x.shape[-1])
             if self.n_samples is not None and x.shape[0] > self.n_samples:
-                x = x[:self.n_samples,:]
+                x = x[: self.n_samples, :]
             self._samples = x
         return self._samples
-        
+
     def __call__(self, step_nr, log_data, driver):
         if mpi.node_number != 0:
             return True
@@ -157,8 +167,17 @@ class LargeHilbertPlotter:
         v2 = _state_on_samples(x, target, U=U, normalize=True)
         e = np.real(driver._loss_stats.mean)
         g = jnp.linalg.norm(jax.flatten_util.ravel_pytree(driver._loss_grad)[0])
-        _plot_vec_and_close(v1, v2, modulus=False, match_phase=True, name=f"SAMPLED({driver.step_count})", e=e, g=g)
+        _plot_vec_and_close(
+            v1,
+            v2,
+            modulus=False,
+            match_phase=True,
+            name=f"SAMPLED({driver.step_count})",
+            e=e,
+            g=g,
+        )
         return True
+
 
 def _state_on_samples(x, state, U=None, normalize=False):
     assert x.ndim == 2
@@ -171,9 +190,10 @@ def _state_on_samples(x, state, U=None, normalize=False):
         lv = lv.reshape(*mels.shape)
         lv = nkjax.logsumexp_cplx(lv, b=mels, axis=-1)
     v = jnp.exp(lv)
-    if normalize: # this means normalizaiton on the samples only (!!!)
+    if normalize:  # this means normalizaiton on the samples only (!!!)
         v /= jnp.linalg.norm(v)
-    return v  
+    return v
+
 
 def plot_projected_states_callback(step_nr, log_data, driver):
     if mpi.n_nodes > 1:
@@ -182,70 +202,123 @@ def plot_projected_states_callback(step_nr, log_data, driver):
     g = driver._loss_grad
     op = driver._op
     if type(driver).__name__ == "InfidelityOptimizer":
-        kwargs = {"modulus":True, "normalize":True}
+        kwargs = {"modulus": True, "normalize": True}
     else:
         kwargs = {}
-    plot_projected_states(driver.state, op.target, U=op._U, e=e, g=g, name=type(driver).__name__, **kwargs)
+    plot_projected_states(
+        driver.state, op.target, U=op._U, e=e, g=g, name=type(driver).__name__, **kwargs
+    )
     return True
-    
 
-def plot_projected_states(vs1, vs2, U=None, e=None, g=None, name=None, modulus=False, normalize=False, match_phase=False):
+
+def plot_projected_states(
+    vs1,
+    vs2,
+    U=None,
+    e=None,
+    g=None,
+    name=None,
+    modulus=False,
+    normalize=False,
+    match_phase=False,
+):
     if e is None:
         e = "e"
     else:
         e = np.real(e.mean)
-        
+
     if g is None:
         g = "g"
     else:
         g = jnp.linalg.norm(jax.flatten_util.ravel_pytree(g)[0])
-    
+
     if name is None:
         name = "n"
-        
+
     v1 = vs1.to_array(normalize=normalize)
     v2 = make_Ustate(vs2, op=U, normalize=normalize)
-    _plot_vec_and_close(v1, v2, modulus=modulus, match_phase=match_phase, name=name, e=e, g=g)
-    
-            
-def _plot_vec_and_close(v1, v2, *, modulus, match_phase, name="", e="", g="", pause=0.1):
-    plt.axhline(0, color='black')
+    _plot_vec_and_close(
+        v1, v2, modulus=modulus, match_phase=match_phase, name=name, e=e, g=g
+    )
+
+
+def _plot_vec_and_close(
+    v1, v2, *, modulus, match_phase, name="", e="", g="", pause=0.1
+):
+    plt.axhline(0, color="black")
     if modulus:
-        plt.scatter(np.arange(v2.size), np.abs(v2), label="U@ref", alpha=0.7, color='green', lw=2, marker='o')
-        plt.scatter(np.arange(v1.size), np.abs(v1), label="vstate", alpha=0.7, color='blue', lw=2, marker='x')
+        plt.scatter(
+            np.arange(v2.size),
+            np.abs(v2),
+            label="U@ref",
+            alpha=0.7,
+            color="green",
+            lw=2,
+            marker="o",
+        )
+        plt.scatter(
+            np.arange(v1.size),
+            np.abs(v1),
+            label="vstate",
+            alpha=0.7,
+            color="blue",
+            lw=2,
+            marker="x",
+        )
     else:
         if match_phase:
             v1 = remove_global_phase(v1)
             v2 = remove_global_phase(v2)
-        plt.scatter(np.arange(v2.size), v2.real, label="U@ref", alpha=0.7, color='green', lw=2, marker='d')
-        plt.scatter(np.arange(v2.size), v2.imag, alpha=0.7, color='green', lw=2, marker='o')
-        plt.scatter(np.arange(v1.size), v1.real, label="vstate", alpha=0.7, color='blue', lw=2, marker='+')
-        plt.scatter(np.arange(v1.size), v1.imag, alpha=0.7, color='blue', lw=2, marker='x')
-    
+        plt.scatter(
+            np.arange(v2.size),
+            v2.real,
+            label="U@ref",
+            alpha=0.7,
+            color="green",
+            lw=2,
+            marker="d",
+        )
+        plt.scatter(
+            np.arange(v2.size), v2.imag, alpha=0.7, color="green", lw=2, marker="o"
+        )
+        plt.scatter(
+            np.arange(v1.size),
+            v1.real,
+            label="vstate",
+            alpha=0.7,
+            color="blue",
+            lw=2,
+            marker="+",
+        )
+        plt.scatter(
+            np.arange(v1.size), v1.imag, alpha=0.7, color="blue", lw=2, marker="x"
+        )
+
     if not isinstance(e, str):
         e = "{:.14f}".format(e)
     if not isinstance(g, str):
         g = "{:.5f}".format(g)
     plt.title("{} : (e, g) = {} |  {}".format(name, e, g))
-    
+
     plt.legend()
-    plt.show(block=False) # needs latest mpl
+    plt.show(block=False)  # needs latest mpl
     plt.pause(pause)
     plt.close()
-    
+
+
 def remove_global_phase(v):
     # compute the weighted phase
     v = v.astype(complex)
-    prob = jnp.abs(v)**2
+    prob = jnp.abs(v) ** 2
     prob /= prob.sum()
     idx = jnp.argmax(prob)
     ref_phase = jnp.angle(v[idx])
-    return v*jnp.exp(-1j*ref_phase)
+    return v * jnp.exp(-1j * ref_phase)
+
 
 @jax.jit
 def safe_log(x):
-    return jnp.log(x+0j)
-
+    return jnp.log(x + 0j)
 
 
 def driver_info(obj, depth=None):
@@ -253,7 +326,7 @@ def driver_info(obj, depth=None):
         return obj.info(depth)
     else:
         return str(obj)
-    
+
 
 def to_tuple(maybe_iterable):
     """
@@ -267,6 +340,7 @@ def to_tuple(maybe_iterable):
         surely_iterable = (maybe_iterable,)
 
     return surely_iterable
+
 
 def to_list(maybe_iterable):
     """
@@ -290,8 +364,10 @@ def add_noise_to_param_dict(key, d, stddev=1e-5):
     n_leaves = len(leaves)
     keys = jax.random.split(key, n_leaves)
     key_tree = jax.tree_util.tree_unflatten(tree_def, keys)
-    return jax.tree_util.tree_map(lambda x, k: x + stddev*jax.random.normal(k, shape=x.shape), d, key_tree)
-    
+    return jax.tree_util.tree_map(
+        lambda x, k: x + stddev * jax.random.normal(k, shape=x.shape), d, key_tree
+    )
+
 
 def timer_to_dict(timer, _root=True):
     d = {}
@@ -305,6 +381,7 @@ def timer_to_dict(timer, _root=True):
         d[k] = v
     return d
 
+
 def timer_to_json(timer, path, indent=4):
     print_mpi("Outputting timer dict to:", path, flush=True)
     if mpi.node_number == 0:
@@ -314,14 +391,11 @@ def timer_to_json(timer, path, indent=4):
         timer_dict = timer_to_dict(timer)
         with open(path, "w") as f:
             json.dump(timer_dict, f, indent=indent)
-       
-@jax.jit 
-def safe_log(x):
-    return jnp.log(x+0j)    
+
 
 @partial(jax.jit, static_argnames=("axis", "keepdims"))
 def mpi_logmeanexp_jax(a, axis=None, keepdims=False):
-    """ Compute Log[Mean[Exp[a]]]"""
+    """Compute Log[Mean[Exp[a]]]"""
     # subtract logmax for better numerical stability
     a_max = mpi.mpi_max_jax(jnp.max(a.real, axis=axis, keepdims=True))[0]
     a_max = jax.lax.stop_gradient(a_max)
@@ -333,9 +407,10 @@ def mpi_logmeanexp_jax(a, axis=None, keepdims=False):
         log_mean = log_mean.squeeze(axis=axis)
     return log_mean
 
+
 @partial(jax.jit, static_argnames=("axis", "keepdims"))
 def mpi_logsumexp_jax(a, axis=None, keepdims=False):
-    """ Compute Log[Mean[Exp[a]]]"""
+    """Compute Log[Mean[Exp[a]]]"""
     # subtract logmax for better numerical stability
     a_max = mpi.mpi_max_jax(jnp.max(a.real, axis=axis, keepdims=True))[0]
     a_max = jax.lax.stop_gradient(a_max)

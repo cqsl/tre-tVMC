@@ -1,8 +1,8 @@
-import jax
 import flax
 from netket import jax as nkjax
 
 from tre_tvmc.driver.utils import safe_log
+
 
 def make_logpsi_U_afun(logpsi_fun, U, variables):
     """Wraps an apply_fun into another one that multiplies it by an
@@ -40,6 +40,8 @@ def _logpsi_U_fun(apply_fun, variables, x, *args):
     variables_applyfun, U = flax.core.pop(variables, "unitary")
 
     logpsi_x = apply_fun(variables_applyfun, x, *args)
-    logUlocal_x = safe_log(U._expect_kernel(apply_fun, variables_applyfun, x, U._pack_arguments()))
+    logUlocal_x = safe_log(
+        U._expect_kernel(apply_fun, variables_applyfun, x, U._pack_arguments())
+    )
     logUpsi_x = logUlocal_x + logpsi_x
-    return logUpsi_x    
+    return logUpsi_x

@@ -1,20 +1,15 @@
-from typing import Optional, Callable, Union
-from functools import partial
+from typing import Optional, Callable
 
-import numpy as np
 
-import jax
 import jax.numpy as jnp
 
 from netket.utils.types import DType, PyTree, Array
-import netket.jax as nkjax
 from netket.hilbert import AbstractHilbert
 from netket.operator import ContinuousOperator
-from netket.utils import HashableArray
+
 
 class UFromHOperator(ContinuousOperator):
-    r""" This is U = Exp[-1j H dt] \approx 1 - 1j*H*dt
-    """
+    r"""This is U = Exp[-1j H dt] \approx 1 - 1j*H*dt"""
 
     def __init__(
         self,
@@ -44,7 +39,7 @@ class UFromHOperator(ContinuousOperator):
     ):
         dt, H_data = data
         Hloc = self._H._expect_kernel(logpsi, params, x, H_data)
-        return 1 - 1j*dt*Hloc
+        return 1 - 1j * dt * Hloc
 
     def _pack_arguments(self) -> PyTree:
         return (self._dt, self._H._pack_arguments())

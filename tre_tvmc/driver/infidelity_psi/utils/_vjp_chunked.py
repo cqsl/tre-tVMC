@@ -9,11 +9,12 @@ from netket.jax import (
     scan_append_reduce,
 )
 from netket.utils import HashablePartial
-from netket.utils import config
+
 # from netket.jax.sharding import sharding_decorator
 from netket.jax._scanmap import _multimap
 from netket.jax._chunk_utils import _chunk as _tree_chunk, _unchunk as _tree_unchunk
 from netket.jax import vjp as nkvjp
+
 # from ._vjp import vjp as nkvjp
 
 
