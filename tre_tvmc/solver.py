@@ -1,13 +1,10 @@
-# import netket as nk
 import jax.numpy as jnp
 from functools import partial
 import jax
-from src.utils import real_dtype
-
-# import copy
 from netket.jax import tree_ravel
 from netket.optimizer.qgt.qgt_jacobian_pytree import QGTJacobianPyTreeT
 from netket.jax._utils_tree import RealImagTuple
+from netket.jax._utils_dtype import dtype_real as real_dtype
 
 
 def smooth_svd(Aobj, b, acond=1e-4, rcond=1e-2, exponent=6, x0=None):

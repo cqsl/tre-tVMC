@@ -1,3 +1,4 @@
+runs/
 *.fig
 figs/
 *.json
