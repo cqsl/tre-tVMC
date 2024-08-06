@@ -13,7 +13,7 @@ from netket.operator import ContinuousOperator
 from netket.utils import HashableArray
 
 class UFromHOperator(ContinuousOperator):
-    r"""This is U = Exp[-1j H dt] \approx 1 - 1j*H*dt
+    r""" This is U = Exp[-1j H dt] \approx 1 - 1j*H*dt
     """
 
     def __init__(

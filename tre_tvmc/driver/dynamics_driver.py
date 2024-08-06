@@ -29,9 +29,9 @@ from netket.optimizer import (
     identity_preconditioner,
     PreconditionerT,
 )
-from netket.utils import mpi#, timing
+from netket.utils import mpi, timing
 
-from tre_tvmc.operator import TevoGenerator
+from tre_tvmc.operator import TREGenerator
 from tre_tvmc.driver.utils import (
     copy_variational_state,
     print_mpi,
@@ -52,7 +52,7 @@ class QDynamics(AbstractVariationalDriver):
         *,
         t0: float = 0.0,
         optimizer: Callable = None,
-        tevo_generator: TevoGenerator = None,
+        tevo_generator: TREGenerator = None,
         preconditioner: PreconditionerT = None,
         method: str = 'fidelity',
         method_kwargs: dict = None,
@@ -76,7 +76,7 @@ class QDynamics(AbstractVariationalDriver):
             self.operator = operator
             
         if tevo_generator is None:
-            tevo_generator = TevoGenerator(self.state.hilbert, operator, order=2)
+            tevo_generator = TREGenerator(self.state.hilbert, operator, order=2)
         self.tevo_generator = tevo_generator
                 
         self.method = method.lower()
@@ -132,64 +132,63 @@ class QDynamics(AbstractVariationalDriver):
         return "\n{}".format(" " * 3 * (depth + 1)).join([str(self), *lines])
 
     def _project(self, n_iter, U=None, U_dagger=None, callback=None, **kwargs):
-        # with timing.timed_scope(name="dynamics_step_projection"):
+        with timing.timed_scope(name="dynamics_step_projection"):
 
-        self.target_state.parameters = self.state.parameters
-        if self.random_noise is not None:
-            if hasattr(self.state, "samples"):
-                key = self.state.sampler_state.rng
+            self.target_state.parameters = self.state.parameters
+            if self.random_noise is not None:
+                if hasattr(self.state, "samples"):
+                    key = self.state.sampler_state.rng
+                else:
+                    key = jax.random.PRNGKey(0)
+                self.target_state.parameters = add_noise_to_param_dict(key, self.target_state.parameters, stddev=self.random_noise)
+            self.target_state.reset()
+
+            callback = to_list(callback) # to avoid we change the list in place
+            if len(callback) == 0:
+                callback.append(default_inner_callback)
+            if self.keep_best:
+                tracker = TrackBestModel()
+                callback.append(tracker)
+                        
+            if self.method in ("fidelity", "infidelity", "fid", "infid"):
+                from .infidelity_psi import InfidelityOptimizer as InfidelityOptimizerImp
+                proj_opt = InfidelityOptimizerImp(
+                    self.target_state,
+                    self.optimizer,
+                    variational_state=self.state,
+                    U=U, 
+                    U_dagger=U_dagger,
+                    preconditioner=self.preconditioner,
+                    is_unitary=False,
+                    sample_sqrt=False,
+                    **self.method_kwargs,
+                )
             else:
-                key = jax.random.PRNGKey(0)
-            self.target_state.parameters = add_noise_to_param_dict(key, self.target_state.parameters, stddev=self.random_noise)
-        self.target_state.reset()
-
-        callback = to_list(callback) # to avoid we change the list in place
-        if len(callback) == 0:
-            callback.append(default_inner_callback)
-        if self.keep_best:
-            tracker = TrackBestModel()
-            callback.append(tracker)
-                    
-        if self.method in ("fidelity", "infidelity", "fid", "infid"):
-            from .infidelity_psi import InfidelityOptimizer as InfidelityOptimizerImp
-            proj_opt = InfidelityOptimizerImp(
-                self.target_state,
-                self.optimizer,
-                variational_state=self.state,
-                U=U, 
-                U_dagger=U_dagger,
-                preconditioner=self.preconditioner,
-                is_unitary=False,
-                sample_sqrt=False,
-                **self.method_kwargs,
-            )
-        else:
-            raise Exception("projection method unknown.")
-        proj_opt.run(n_iter, callback=callback, **kwargs)
-        
-        if self.keep_best:
-            best_step, best_loss, best_params = tracker.get_best_step()
-            if best_params is None:
-                if kwargs.get("show_progress", False):
-                    print_mpi(f"Trying to take best params at step {best_step} with loss {best_loss}, but found None params", flush=True)
+                raise Exception("projection method unknown.")
+            proj_opt.run(n_iter, callback=callback, **kwargs)
+            
+            if self.keep_best:
+                best_step, best_loss, best_params = tracker.get_best_step()
+                if best_params is None:
+                    if kwargs.get("show_progress", False):
+                        print_mpi(f"Trying to take best params at step {best_step} with loss {best_loss}, but found None params", flush=True)
+                    self.state.parameters = proj_opt.state.parameters
+                else:                
+                    if kwargs.get("show_progress", False):
+                        print_mpi(f"Found best model at step {best_step} with loss {best_loss}", flush=True)
+                    self.state.parameters = best_params
+                self._loss_store.append(best_loss)
+            else:            
+                self._loss_store.append(proj_opt.loss)
                 self.state.parameters = proj_opt.state.parameters
-            else:                
-                if kwargs.get("show_progress", False):
-                    print_mpi(f"Found best model at step {best_step} with loss {best_loss}", flush=True)
-                self.state.parameters = best_params
-            self._loss_store.append(best_loss)
-        else:            
-            self._loss_store.append(proj_opt.loss)
-            self.state.parameters = proj_opt.state.parameters
 
     def _advance_step(self, n_iter=250, show_inner_progress=False, out=None, inner_callback=None, minimal=False):
-        # for op_nr, (op, op_dag) in enumerate(zip(Us, Udags)):
         if show_inner_progress:
             print_mpi("+"*100)
             print_mpi("t = ", self.t)
         self._loss_store = []
         
-        for op_nr, (k, (op, op_dag, op_dt)) in enumerate(self.tevo_generator.zigzag_method(self.t, dt=self.dt).items()):        
+        for op_nr, (k, (op, op_dag, op_dt)) in enumerate(self.tevo_generator.taylor_root_expansion(self.t, dt=self.dt).items()):        
             op_type = k[0]
             self._propagator_and_dagger = (op, op_dag)
             self.state.reset()
@@ -243,14 +242,14 @@ class QDynamics(AbstractVariationalDriver):
                 tstops = tstops[1:]
 
             # here comes the stepping
-            # with timing.timed_scope(name="dynamics_advance_step"):
-            self._advance_step(**iter_kwargs)
+            with timing.timed_scope(name="dynamics_advance_step"):
+                self._advance_step(**iter_kwargs)
 
             self._step_count += 1
             # optionally call callback
-            # with timing.timed_scope(name="dynamics_step_callback"):
-            if callback:
-                callback()
+            with timing.timed_scope(name="dynamics_step_callback"):
+                if callback:
+                    callback()
 
         # Yield one last time if the remaining tstop is at t_end
         if (always_stop and np.isclose(self.t, t_end)) or (
@@ -346,10 +345,10 @@ class QDynamics(AbstractVariationalDriver):
                 pbar.refresh()
 
             for step in self._iter(T, tstops=tstops, show_inner_progress=show_inner_progress, n_iter=n_iter, out=out_inner, callback=update_progress_bar, inner_callback=inner_callback, **iter_kwargs):
-                # with timing.timed_scope(name="dynamics_observables"):
-                log_data = self.estimate(obs)
-                # with timing.timed_scope(name="dynamics_additional_data"):
-                self._log_additional_data(log_data, step)
+                with timing.timed_scope(name="dynamics_observables"):
+                    log_data = self.estimate(obs)
+                with timing.timed_scope(name="dynamics_additional_data"):
+                    self._log_additional_data(log_data, step)
 
                 self._postfix = {"n": self.step_count}
                 # if the cost-function is defined then report it in the progress bar
@@ -364,14 +363,14 @@ class QDynamics(AbstractVariationalDriver):
 
 
                 # Execute callbacks before loggers because they can append to log_data
-                # with timing.timed_scope(name="dynamics_callbacks"):
-                for callback in callbacks:
-                    if not callback(step, log_data, self):
-                        callback_stop = True
+                with timing.timed_scope(name="dynamics_callbacks"):
+                    for callback in callbacks:
+                        if not callback(step, log_data, self):
+                            callback_stop = True
 
-                # with timing.timed_scope(name="dynamics_loggers"):
-                for logger in loggers:
-                    logger(self.step_value, log_data, self.state)
+                with timing.timed_scope(name="dynamics_loggers"):
+                    for logger in loggers:
+                        logger(self.step_value, log_data, self.state)
 
                 if len(callbacks) > 0:
                     if mpi.mpi_any(callback_stop):
@@ -395,7 +394,6 @@ class QDynamics(AbstractVariationalDriver):
             for i, v in enumerate(self._loss_store):
                 log_dict[f"inner_loss{i}"] = v
         log_dict["Generator"] = self.state.expect(self.operator(self.t))
-        print_mpi("Current generator:", log_dict["Generator"], flush=True)
 
 
     @property

@@ -11,6 +11,7 @@ import netket.jax as nkjax
 from netket.hilbert import AbstractHilbert
 from netket.operator import ContinuousOperator, AbstractOperator
 from netket.utils import HashableArray
+
 from .tevo import UFromHOperator
 
 COEFFS = [
@@ -21,7 +22,8 @@ COEFFS = [
     (0.042626656502702476+0.39463295317211333j, 0.042626656502702476-0.39463295317211333j, 0.4573733434972975+0.23510048799854277j, 0.4573733434972975-0.23510048799854277j)
 ]
 
-class TevoGenerator:
+class TREGenerator:
+    """ The core of the TRE method: yields sequences of Taylor-Root Expansion operators. """
     def __init__(self, hilbert: AbstractHilbert, H : ContinuousOperator, order: int = 2):
         self.hilbert = hilbert
         if isinstance(H, AbstractOperator):
@@ -39,7 +41,7 @@ class TevoGenerator:
         assert np.isclose(c, 1), f"got order that gave wrong solution: {self.order} with sum = {c} != 1"
 
         
-    def zigzag_method(self, t, dt=1e-2):
+    def taylor_root_expansion(self, t, dt=1e-2):
         op_dict = {}
         Ht = self.H(t)
         for i, ck in enumerate(self.coeffs):
