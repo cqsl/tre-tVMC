@@ -10,3 +10,6 @@ Please cite our work if you use this code
   year={2024}
 }
 ```
+
+This code is largely inspired by, and contains code from, [NetKet Fidelity](https://github.com/netket/netket_fidelity.git) and [NetKet](https://github.com/netket/netket.git)
+
