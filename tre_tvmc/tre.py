@@ -4,7 +4,7 @@ import numpy as np
 from netket.hilbert import AbstractHilbert
 from netket.operator import ContinuousOperator, AbstractOperator
 
-from .tevo import UFromHOperator
+from .operator.tevo import UFromHOperator
 
 COEFFS = [
     (),
@@ -58,4 +58,4 @@ class TREGenerator:
         return op_dict
 
     def __repr__(self):
-        return f"TevoGenerator(K={self.order})"
+        return f"TREGenerator(K={self.order})"
