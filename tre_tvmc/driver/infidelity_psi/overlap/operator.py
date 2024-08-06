@@ -7,7 +7,7 @@ from netket.utils.numbers import is_scalar
 from netket.vqs import VariationalState, FullSumState
 from netket.stats import Stats
 
-from tre_tvmc.driver.infidelity.utils.sampling_Ustate import make_logpsi_U_afun
+from tre_tvmc.driver.infidelity_psi.utils.sampling_Ustate import make_logpsi_U_afun
 from tre_tvmc.driver.utils import copy_variational_state
 
 

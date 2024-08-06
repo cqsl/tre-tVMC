@@ -19,7 +19,7 @@ from netket.optimizer import (
 )
 from netket.utils import timing
 
-from tre_tvmc.operator import TREGenerator
+from tre_tvmc.tre import TREGenerator
 from tre_tvmc.driver.utils import (
     copy_variational_state,
     print_mpi,

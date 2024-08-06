@@ -8,7 +8,7 @@ from netket.stats import statistics as mpi_statistics, Stats
 import numpy as np
 import matplotlib.pyplot as plt
 
-from tre_tvmc.utils import mpi_logmeanexp_jax
+from tre_tvmc.driver.utils import mpi_logmeanexp_jax
 from ._vjp_chunked import vjp_chunked
 
 
@@ -245,12 +245,6 @@ def compute_log_norm(log_w, n_chains=None):
     if n_chains is not None:
         log_w = log_w.reshape(n_chains, -1)
     return mpi_logmeanexp_jax(log_w)
-
-
-# @jax.jit
-# def compute_normalized_weights(log_w, log_N):
-#     log_wc = log_w - log_N
-#     return log_wc
 
 
 @jax.jit
