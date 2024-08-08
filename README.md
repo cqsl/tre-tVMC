@@ -1,5 +1,5 @@
 # tre-tVMC
-Taylor-Root Expansion time-dependent Variational Monte Carlo
+Taylor-Root Expansion time-dependent Variational Monte Carlo [![DOI](https://zenodo.org/badge/838736115.svg)](https://zenodo.org/doi/10.5281/zenodo.13273353)
 
 Please cite our work if you use this code
 ```
