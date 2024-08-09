@@ -12,4 +12,4 @@ Please cite our work if you use this code
 ```
 
 This code is largely inspired by, and contains code from, [NetKet Fidelity](https://github.com/netket/netket_fidelity.git) and [NetKet](https://github.com/netket/netket.git)
-
+The code is currently designed to run on CPU, but we will include GPU sharding possibilities soon.
